@@ -1,0 +1,1 @@
+"""Monte Carlo algorithms for the 2D Ising model (Krauth, chapter 5)."""
