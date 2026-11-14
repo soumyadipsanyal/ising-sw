@@ -2,8 +2,9 @@
 
 Gray-code enumeration of every configuration gives the number of
 configurations N(E, M) with energy E and magnetisation M (Krauth Alg. 5.2
-and 5.3, Exercises 5.3 and 5.6).  These exact counts are the reference
-that every Monte Carlo result in this project is tested against.
+and 5.3, Exercises 5.3 and 5.6).  Thermodynamic averages then follow by
+summing over E and M (Alg. 5.4, Exercise 5.4).  These exact values are the
+reference that every Monte Carlo result in this project is tested against.
 """
 
 from pathlib import Path
@@ -77,3 +78,54 @@ def density_of_states(L, periodic=True, use_cache=True):
     g = N.sum(axis=1)
     keep = g > 0
     return E[keep], g[keep]
+
+
+def _boltzmann_weights(E, g, beta):
+    """Normalised weights g(E) exp(-beta E) / Z, computed with logarithms."""
+    E = np.asarray(E, dtype=float)
+    g = np.asarray(g, dtype=float)
+    keep = g > 0
+    logw = np.full(E.shape, -np.inf)
+    logw[keep] = np.log(g[keep]) - beta * E[keep]
+    logw -= logw.max()
+    w = np.exp(logw)
+    return w / w.sum()
+
+
+def thermodynamics(L, T, periodic=True):
+    """Exact energy per spin and specific heat per spin at temperature T."""
+    E, g = density_of_states(L, periodic)
+    beta = 1.0 / T
+    w = _boltzmann_weights(E, g, beta)
+    n_sites = L * L
+    E_mean = np.sum(w * E)
+    E_var = np.sum(w * (E - E_mean) ** 2)
+    return E_mean / n_sites, beta**2 * E_var / n_sites
+
+
+def magnetisation_moments(L, T, periodic=True):
+    """Exact <|m|>, <m^2>, <m^4> and the Binder cumulant at temperature T.
+
+    The Binder cumulant uses Krauth's convention B = (3 - <m^4>/<m^2>^2) / 2,
+    which is 0 for Gaussian m (high T) and 1 for m = +-1 (low T).
+    """
+    E, M, N = energy_magnetisation_counts(L, periodic)
+    beta = 1.0 / T
+    n_sites = L * L
+    wE = _boltzmann_weights(E, N.sum(axis=1), beta)
+    g = N.sum(axis=1).astype(float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        per_config = np.where(g > 0, wE / g, 0.0)
+    P_M = per_config @ N.astype(float)  # probability of each magnetisation
+    m = M / n_sites
+    abs_m = np.sum(P_M * np.abs(m))
+    m2 = np.sum(P_M * m**2)
+    m4 = np.sum(P_M * m**4)
+    return {"abs_m": abs_m, "m2": m2, "m4": m4, "binder": 0.5 * (3.0 - m4 / m2**2)}
+
+
+def onsager_magnetisation(T):
+    """Spontaneous magnetisation of the infinite 2D lattice (zero above T_c)."""
+    T = np.asarray(T, dtype=float)
+    x = 1.0 - np.sinh(2.0 / T) ** -4
+    return np.where(x > 0, np.abs(x) ** 0.125, 0.0)

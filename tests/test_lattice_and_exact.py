@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from ising import exact
 from ising.lattice import DOWN, LEFT, RIGHT, UP, energy, magnetisation, n_bonds, neighbour_table
@@ -58,3 +59,27 @@ def test_bipartite_symmetry_exercise_5_5():
     assert np.array_equal(g, g[::-1])
     E, g = exact.density_of_states(3, use_cache=False)
     assert not np.array_equal(g, g[::-1])
+
+
+@pytest.mark.parametrize("T", [1.5, 2.0, 2.5, 3.5])
+def test_specific_heat_is_derivative_of_energy_exercise_5_4(T):
+    h = 1e-4
+    e_plus, _ = exact.thermodynamics(4, T + h)
+    e_minus, _ = exact.thermodynamics(4, T - h)
+    _, c = exact.thermodynamics(4, T)
+    assert (e_plus - e_minus) / (2 * h) == pytest.approx(c, rel=1e-6)
+
+
+def test_cached_6x6_table_if_present():
+    path = exact.DATA_DIR / "counts_L6_periodic.npz"
+    if not path.exists():
+        pytest.skip("6x6 table not computed yet")
+    E, g = exact.density_of_states(6)
+    table = dict(zip(E.tolist(), g.tolist()))
+    assert g.sum() == 2**36
+    assert (table[-72], table[-64], table[-60], table[-56]) == (2, 72, 144, 1620)
+
+
+def test_binder_cumulant_limits():
+    assert exact.magnetisation_moments(4, 0.5)["binder"] == pytest.approx(1.0, abs=1e-6)
+    assert exact.magnetisation_moments(4, 1e4)["binder"] < 0.1
